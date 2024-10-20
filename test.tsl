@@ -1,0 +1,13 @@
+func print(t Int) Void {
+    return void;
+}
+
+func print(t String) Void {
+    return void;
+}
+
+func main() Void {
+    print(1)
+    print("Hello")
+    return void
+}
