@@ -1,9 +1,9 @@
 func print(t Int) Void {
-    return void;
+    log_int $ t;
 }
 
 func print(t String) Void {
-    return void;
+    log $ t;
 }
 
 func main() Void {

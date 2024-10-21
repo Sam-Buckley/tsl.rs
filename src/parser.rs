@@ -40,6 +40,9 @@ pub enum AstNode {
     Return {
         value: Box<AstNode>,
     },
+    Char {
+        value: String,
+    },
     String {
         value: String,
     },
@@ -66,6 +69,9 @@ pub enum AstNode {
     },
     Dereference {
         value: Box<AstNode>, // value to dereference
+    },
+    Comment {
+        value: String,
     },
     Eof,
 }
@@ -111,18 +117,25 @@ impl AstNode {
             _ => vec![],
         }
     }
-    pub fn get_type(&self) -> Type {
+    pub fn get_type(&mut self, temp_checker: &TypeChecker) -> Type {
         match self {
             AstNode::Number { .. } => Type::Integer,
             AstNode::String { .. } => Type::String,
-            AstNode::Identifier { .. } => Type::NotMentioned,
+            AstNode::Identifier { value } => {
+                if let Some(tp) = temp_checker.symbol_table.get(value) {
+                    tp.clone()
+                } else {
+                    Type::NotMentioned
+                }
+            }
             AstNode::Variable { .. } => Type::NotMentioned,
             AstNode::FunctionCall { name, .. } => Type::NotMentioned,
             AstNode::BinaryOperation { operator, .. } => Type::from(operator.value.as_str()),
             AstNode::Assignment { tp, .. } => Type::from(tp.as_ref().unwrap().as_str()),
-            AstNode::Return { value } => value.get_type(),
+            AstNode::Return { value } => value.get_type(temp_checker),
             AstNode::Uninit { tp } => Type::from(tp.as_str()),
             AstNode::Bool { .. } => Type::Bool,
+            AstNode::Char { .. } => Type::Char,
             _ => Type::NotMentioned,
         }
     }
@@ -131,11 +144,12 @@ impl AstNode {
 pub struct Parser {
     tokens: Vec<Token>,
     position: usize,
-    temp_checker: TypeChecker,
+    pub temp_checker: TypeChecker,
 }
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
+        let mut temp_checker = TypeChecker::new();
         Parser {
             tokens,
             position: 0,
@@ -143,7 +157,17 @@ impl Parser {
         }
     }
 
-    pub fn parse_program(&mut self) -> AstNode {
+    pub fn parse(&mut self) -> AstNode {
+        self.parse_program(); // first pass to get all types
+        self.position = 0;
+        self.parse_program()
+    }
+    fn parse_comment(&mut self) -> AstNode {
+        let value = self.current_token().value.clone();
+        self.position += 1;
+        AstNode::Comment { value }
+    }
+    fn parse_program(&mut self) -> AstNode {
         let mut statements = Vec::new();
         while self.current_token().token_type != TokenType::EOF {
             if let Some(statement) = self.parse_statement() {
@@ -153,6 +177,9 @@ impl Parser {
             }
         }
         statements.push(AstNode::Eof);
+        // Go over the AST and check if all types are defined
+        // Manually go down every branch searching for NotMentioned, if found, use check to find the type
+        // If check fails, return error
         AstNode::Block { statements }
     }
 
@@ -184,11 +211,31 @@ impl Parser {
             (TokenType::Void, _) => Some(self.parse_void()),
             (TokenType::True, _) => Some(self.parse_true()),
             (TokenType::False, _) => Some(self.parse_false()),
+            (TokenType::Comment, v) => Some(self.parse_comment()),
+            (TokenType::TypeName, _) => Some(self.parse_type()),
             // (TokenType::Block, _) => None,
             _ => Some(self.parse_expression()),
         }
     }
-
+    fn parse_type(&mut self) -> AstNode {
+        // Depending on type, create a default value of that type
+        let tp = self.current_token().value.clone();
+        self.position += 1; // Skip type name
+        println!("Type: {}", tp);
+        match tp.as_str() {
+            "Int" => AstNode::Number { value: 0 },
+            "Char" => AstNode::Char {
+                value: "\0".to_string(),
+            },
+            "String" => AstNode::String {
+                value: "".to_string(),
+            },
+            "Bool" => AstNode::Bool {
+                value: "false".to_string(),
+            },
+            _ => AstNode::Null,
+        }
+    }
     fn parse_let_statement(&mut self) -> Option<AstNode> {
         self.position += 1; // Skip 'let'
         let variable = self.current_token().value.clone();
@@ -211,12 +258,15 @@ impl Parser {
                 value: Box::new(AstNode::Uninit { tp: tp.unwrap() }),
             });
         }
-        let value = self.parse_expression();
+        let mut value = self.parse_expression();
         let tp = if let Some(tp) = tp.clone() {
             if tp == "NotMentioned" {
-                let value_type = self.temp_checker.check(&value);
-                let value_type = value_type.unwrap();
-                Some(String::from(value_type))
+                let value_type = self.temp_checker.check(&mut value);
+                if let Ok(value_type) = value_type {
+                    Some(String::from(value_type))
+                } else {
+                    Some(tp)
+                }
             } else {
                 Some(tp)
             }
@@ -269,10 +319,10 @@ impl Parser {
                 value: Box::new(AstNode::Uninit { tp: tp.unwrap() }),
             });
         }
-        let value = self.parse_expression();
+        let mut value = self.parse_expression();
         let tp = if let Some(tp) = tp.clone() {
             if tp == "NotMentioned" {
-                let value_type = self.temp_checker.check(&value).unwrap();
+                let value_type = self.temp_checker.check(&mut value).unwrap();
                 Some(String::from(value_type))
             } else {
                 Some(tp)
@@ -337,6 +387,17 @@ impl Parser {
         self.position += 1; // Skip return type
         self.position += 1;
         let body = Box::new(self.parse_block());
+        // Add function to symbol table
+        let mut arg_types = Vec::new();
+        for (arg_type, _) in arguments.iter() {
+            arg_types.push(Type::from(arg_type.as_str()));
+        }
+        self.temp_checker
+            .function_table // Type HashMap<String, (Vec<Type>, Vec<Type>)>,
+            .insert(
+                name.clone(),
+                (arg_types, vec![Type::from(return_type.as_str())]),
+            );
         Some(AstNode::Function {
             name,
             arguments,
@@ -432,6 +493,7 @@ impl Parser {
                 }
             }
             TokenType::Number => self.parse_number(),
+            TokenType::Char => self.parse_char(),
             TokenType::StringLiteral => self.parse_string(),
             TokenType::LeftParen => self.parse_grouped_expression(),
             TokenType::True => self.parse_true(),
@@ -439,6 +501,7 @@ impl Parser {
             TokenType::Void => self.parse_void(),
             TokenType::Ampersand => self.parse_pointer(),
             TokenType::Deref => self.parse_deref(),
+            TokenType::TypeName => self.parse_type(),
             _ => panic!("Unexpected token: {:?}", self.current_token()),
         }
     }
@@ -491,6 +554,12 @@ impl Parser {
         let value = self.current_token().value.clone();
         self.position += 1;
         AstNode::Identifier { value }
+    }
+
+    fn parse_char(&mut self) -> AstNode {
+        let value = self.current_token().value.clone();
+        self.position += 1;
+        AstNode::Char { value }
     }
 
     fn parse_grouped_expression(&mut self) -> AstNode {

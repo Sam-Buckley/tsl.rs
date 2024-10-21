@@ -169,6 +169,14 @@ pub fn resolve_names(ast: &AstNode) -> AstNode {
                     scope_argnames,
                 )),
             },
+            AstNode::Dereference { value } => AstNode::Dereference {
+                value: Box::new(resolve_names_helper(
+                    value,
+                    scopes,
+                    statements,
+                    scope_argnames,
+                )),
+            },
             _ => ast.clone(),
         }
     }

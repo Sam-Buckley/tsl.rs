@@ -37,7 +37,7 @@ impl AsC for CType {
 
 pub fn c_bindgen_prelude() -> String {
     // Read cargo_manifest_dir/src/transpiler/prelude.c
-    let prelude = include_str!("prelude.c");
+    let prelude = "\n\n".to_string() + include_str!("prelude.c");
     prelude.to_string()
 }
 
@@ -142,22 +142,34 @@ pub fn c_bindgen(ast: &AstNode, indent: usize, is_in_function: bool) -> String {
                 indent_str,
                 Type::from(tp.clone().unwrap()).as_c(),
                 variable.split("::").last().unwrap(),
-                c_bindgen(value, 0, is_in_function)
+                c_bindgen(value, 0, true)
             ));
         }
         AstNode::FunctionCall { name, arguments } => {
-            result.push_str(&format!(
-                "{}{}({})",
-                indent_str,
-                name.split("::").last().unwrap(),
-                arguments
-                    .iter()
-                    .map(|arg| c_bindgen(arg, 0, true))
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            ));
-            if !is_in_function {
-                result.push_str(";\n");
+            // check if the name is toChar or toInt
+            if name == "asChar" {
+                result.push_str(&format!(
+                    "{}(char){}",
+                    indent_str,
+                    c_bindgen(arguments.first().unwrap(), 0, is_in_function)
+                ));
+            } else if name == "asInt" || name == "boolToInt" {
+                result.push_str(&format!(
+                    "{}(int){}",
+                    indent_str,
+                    c_bindgen(arguments.first().unwrap(), 0, is_in_function)
+                ));
+            } else {
+                result.push_str(&format!(
+                    "{}{}({});\n",
+                    indent_str,
+                    name.split("::").last().unwrap(),
+                    arguments
+                        .iter()
+                        .map(|arg| c_bindgen(arg, 0, true))
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                ));
             }
         }
         AstNode::Number { value } => {
@@ -179,6 +191,9 @@ pub fn c_bindgen(ast: &AstNode, indent: usize, is_in_function: bool) -> String {
                 c_bindgen(value, 0, is_in_function)
             ));
         }
+        AstNode::Char { value } => {
+            result.push_str(&format!("{}'{}'", indent_str, value));
+        }
         AstNode::Dereference { value } => {
             result.push_str(&format!(
                 "{}*{}",
@@ -186,7 +201,11 @@ pub fn c_bindgen(ast: &AstNode, indent: usize, is_in_function: bool) -> String {
                 c_bindgen(value, 0, is_in_function)
             ));
         }
+        AstNode::Comment { value } => {
+            result.push_str(&format!("{}// {}\n", indent_str, value));
+        }
         _ => {}
     }
+    // If result added ' ' at the end, print the node
     result
 }

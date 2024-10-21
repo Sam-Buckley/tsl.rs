@@ -1,5 +1,6 @@
 #![allow(unused, clippy::borrowed_box)]
 #![feature(f128)]
+#![feature(let_chains)]
 
 // Module declarations
 mod lex;
@@ -43,29 +44,19 @@ fn cli() {
     let option = &args[1];
     let filename = &args[2];
     let input = std::fs::read_to_string(filename).expect("Failed to read the file");
+    let tsl_prelude = include_str!("transpiler/prelude.tsl").to_string();
+    let input = tsl_prelude + &input;
     if option == "build" {
         transpile(input);
         std::process::Command::new("gcc")
             .arg("output.c")
             .arg("-o")
-            .arg("output")
+            .arg("./output")
             .output()
             .expect("Failed to compile the C code");
+        // println!("Compiled successfully");
         // delete the output.c file
-        std::fs::remove_file("output.c").expect("Failed to delete the output.c file");
-    } else if option == "run" {
-        transpile(input);
-        std::process::Command::new("gcc")
-            .arg("output.c")
-            .arg("-o")
-            .arg("output")
-            .output()
-            .expect("Failed to compile the C code");
-        std::process::Command::new("./output")
-            .output()
-            .expect("Failed to run the compiled program"); // Run the compiled program in the terminal
-                                                           // delete the output.c file
-        std::fs::remove_file("output.c").expect("Failed to delete the output.c file");
+        // std::fs::remove_file("output.c").expect("Failed to delete the output.c file");
     } else if option == "transpile" {
         transpile(input);
     } else {
@@ -89,21 +80,24 @@ fn transpile(input: String) {
 
     // Parsing
     let mut parser = parser::Parser::new(tokens);
-    let mut ast = parser.parse_program();
-
+    let mut ast = parser.parse();
+    let mut temp_checker = parser.temp_checker;
+    temp_checker.prelude(&ast);
     // Static dispatch
-    let res = transpiler::overloading::static_dispatch(&mut ast);
+    let res = transpiler::overloading::static_dispatch(&mut ast, temp_checker);
+    // println!("{:#?}", ast);
     if let Err(e) = res {
         println!("Error: {}", e);
     }
 
     // Name resolution
     ast = transpiler::ir::resolve_names(&ast);
-
+    // println!("{:#?}", ast);
+    // println!("{:#?}", ast);
     // Type checking
     let mut type_checker = transpiler::type_checker::TypeChecker::new();
     type_checker.prelude(&ast);
-    let res = type_checker.check(&ast);
+    let res = type_checker.check(&mut ast);
     match res {
         Ok(t) => {
             // C code generation

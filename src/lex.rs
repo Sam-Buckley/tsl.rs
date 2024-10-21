@@ -7,6 +7,7 @@ pub enum TokenType {
     Operator,
     Assignment,
     Comparison,
+    Char,
     StringLiteral,
     LeftParen,
     RightParen,
@@ -26,6 +27,7 @@ pub enum TokenType {
     RightSquare,
     Ampersand,
     Deref, // a caret
+    Comment,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -44,6 +46,17 @@ impl Lexer {
         Lexer { input, position: 0 }
     }
 
+    fn lex_comment(&mut self) -> Token {
+        let start = self.position;
+        while self.current_char() != '\n' {
+            self.position += 1;
+        }
+        Token {
+            token_type: TokenType::Comment,
+            value: self.input[start..self.position].to_string(),
+        }
+    }
+
     pub fn next_token(&mut self) -> Option<Token> {
         self.skip_whitespace();
         if self.position >= self.input.len() {
@@ -54,6 +67,9 @@ impl Lexer {
 
         if current_char.is_alphabetic() {
             return Some(self.lex_identifier_or_keyword());
+        } else if current_char == '/' && self.peek_char() == '/' {
+            self.position += 2;
+            return Some(self.lex_comment());
         } else if current_char.is_ascii_digit() {
             return Some(self.lex_number());
         } else if current_char == '"' {
@@ -202,6 +218,17 @@ impl Lexer {
                 token_type: TokenType::Deref,
                 value: "^".to_string(),
             });
+        } else if current_char == '\'' {
+            let res = self.lex_char();
+            if res.value == "\r" {
+                // skip the \r
+                self.position += 1;
+                return Some(Token {
+                    token_type: TokenType::Newline,
+                    value: "\r".to_string(),
+                });
+            }
+            return Some(res);
         } else {
             self.position += 1;
             return Some(Token {
@@ -211,6 +238,16 @@ impl Lexer {
         }
 
         None
+    }
+
+    fn lex_char(&mut self) -> Token {
+        self.position += 1; // Skip the opening quote
+        let value = self.current_char().to_string();
+        self.position += 1; // Skip the closing quote
+        Token {
+            token_type: TokenType::Char,
+            value,
+        }
     }
 
     fn lex_identifier_or_keyword(&mut self) -> Token {
