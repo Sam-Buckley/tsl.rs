@@ -1,0 +1,152 @@
+
+// ==================== Start of prelude.tsl =================
+//
+//
+
+// Cast Functions - these functions are used to cast between different types
+// The "to" in the typename argument that will be passed
+// Each cast function has an explicit and implicit version, depending on ambiguity this allows the user to specify which cast function to use
+
+func cast(s Int) Char {
+    return asChar(s);
+}
+
+func cast(s Int to Char) Char {
+    return asChar(s);
+}
+
+func cast(s Char) Int {
+    return asInt(s);
+}
+
+func cast(s Char to Int) Int {
+    return asInt(s);
+}
+
+func cast(s Int ) Bool {
+    if s == 0 {
+        return false
+    }
+    return true
+}
+
+func cast(s Int to Bool) Bool {
+    if s == 0 {
+        return false
+    }
+    return true
+}
+
+func cast(s Bool ) Int {
+    if s == false {
+        return 0
+    }
+    return 1
+}
+
+func cast(s Bool to Int) Int {
+    if s == false {
+        return 0
+    }
+    return 1
+}
+
+func cast(s String) Char {
+    return ^(s);
+}
+
+func cast(s String to Char) Char {
+    return ^(s);
+}
+
+func cast(s String) Int {
+    let x Char = ^s
+    return asInt(x);
+}
+
+func cast(s String to Int) Int {
+    let x Char = ^s
+    return asInt(x);
+}
+
+
+
+
+func get_bool_string() String {
+    return "false\0true";
+}
+
+func str_plus(s String n Int) String {
+    return s + n;
+}
+
+func print (t Int) Void {
+    log_int $ t;
+    return void;
+}
+
+func println (t Int) Void {
+    log_int $ t;
+    log $ "\n";
+    return void;
+}
+
+func print (s String) Void {
+    log $ s;
+    return void;
+}
+
+func println (s String) Void {
+    log $ s;
+    log $ "\n";
+    return void;
+}
+
+func print(s Bool) Void {
+    let v Int = boolToInt(s)
+    log $ ("false\0true" + v * 6);
+    return void;
+}
+
+func println(s Bool) Void {
+    let str String = get_bool_string();
+    let v Int = boolToInt(s)
+    log $ (str + v * 6);
+    log $ "\n";
+    return void;
+}
+
+func print(s Char) Void {
+    log_char $ s;
+    return void;
+}
+
+func println(s Char) Void {
+    log_char $ s;
+    log $ "\n";
+    return void;
+}
+
+func item_at(arr Char* n Int) Char {
+    return ^(arr + n);
+}
+
+func item_at(arr String n Int) Char {
+    return ^(arr + n);
+}
+
+func item_at(arr Int* n Int) Int {
+    return ^(arr + n);
+}
+
+func asint(s Char) Int{
+    return asInt (s);
+}
+
+func aschar(i Int) Char{
+    return asChar (i);
+}
+
+// ==================== End of prelude.tsl =================
+// 
+// ==================== Start of your code =================

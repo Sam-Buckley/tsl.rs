@@ -17,12 +17,16 @@
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define ABS(a) ((a) < 0 ? -(a) : (a))
 
-#define print printf
-// #define input scanf
 #define len strlen
 #define String char*
 #define log tsl_log
 #define log_int tsl_log_int
+
+#define int_t 0
+#define float_t 0.0
+#define char_t '\0'
+#define bool_t false
+#define string_t ""
 
 struct str {
     char* s;
@@ -31,6 +35,7 @@ struct str {
 };
 
 typedef struct str Str;
+
 
 Str* newStr() {
     Str* s = (Str*)malloc(sizeof(Str));
@@ -73,11 +78,11 @@ void freeStr(Str* s) {
 
 
 void tsl_log(char* s) {
-    printf("%s\0", s);
+    printf("%s", s);
 }
 
 void tsl_log_int(int n) {
-    printf("%d\n", n);
+    printf("%d", n);
 }
 
 char* new_buffer(int size) {
@@ -88,6 +93,9 @@ void input(char* buf) {
     scanf("%s", buf);
 }
 
+void log_char(char c) {
+    printf("%c", c);
+}
+
 // ==================== End of prelude.c =================
 
-// ==================== Start of output.c =================

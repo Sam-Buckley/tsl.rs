@@ -19,6 +19,7 @@ impl AsC for Type {
             Type::DataTp(name) => name.clone(),
             Type::NotMentioned => "NotMentioned".to_string(),
             Type::Pointer(tp) => format!("{}*", tp.as_c()),
+            Type::Char => "char".to_string(),
         }
     }
 }
@@ -34,6 +35,7 @@ pub enum Type {
     DataTp(String),
     NotMentioned,
     Pointer(Box<Type>),
+    Char,
 }
 
 impl From<&str> for Type {
@@ -52,6 +54,8 @@ impl From<&str> for Type {
             "String*" => Type::Pointer(Box::new(Type::String)),
             "Func*" => Type::Pointer(Box::new(Type::Function)),
             "Void*" => Type::Pointer(Box::new(Type::Void)),
+            "Char" => Type::Char,
+            "Char*" => Type::Pointer(Box::new(Type::Char)),
             _ => {
                 if name.ends_with('*') {
                     Type::Pointer(Box::new(Type::DataTp(
@@ -81,6 +85,8 @@ impl From<String> for Type {
             "String*" => Type::Pointer(Box::new(Type::String)),
             "Func*" => Type::Pointer(Box::new(Type::Function)),
             "Void*" => Type::Pointer(Box::new(Type::Void)),
+            "Char" => Type::Char,
+            "Char*" => Type::Pointer(Box::new(Type::Char)),
             _ => {
                 if name.ends_with('*') {
                     Type::Pointer(Box::new(Type::DataTp(
@@ -106,6 +112,7 @@ impl From<Type> for String {
             Type::DataTp(name) => name,
             Type::NotMentioned => "UnNamed".to_owned(),
             Type::Pointer(tp) => format!("{}*", String::from(*tp)),
+            Type::Char => "Char".to_owned(),
         }
     }
 }
@@ -141,6 +148,7 @@ impl TypeChecker {
                 body: _,
             } => {
                 let arg_types = arguments
+                    .clone()
                     .iter()
                     .map(|(tp, _)| Type::from(tp.clone()))
                     .collect();
@@ -160,6 +168,21 @@ impl TypeChecker {
             }
             _ => {}
         }
+
+        // log_char: string -> void
+
+        self.function_table
+            .insert("log_char".to_string(), (vec![Type::Char], vec![Type::Void]));
+
+        //toChar: int -> char
+        self.function_table.insert(
+            "asChar".to_string(),
+            (vec![Type::Integer], vec![Type::Char]),
+        );
+
+        // toInt: char -> int
+        self.function_table
+            .insert("asInt".to_string(), (vec![Type::Char], vec![Type::Integer]));
 
         // log: string -> void
         self.function_table
@@ -183,6 +206,12 @@ impl TypeChecker {
             (vec![Type::Integer], vec![Type::String]),
         );
 
+        // boolToInt: bool -> int
+        self.function_table.insert(
+            "boolToInt".to_string(),
+            (vec![Type::Bool], vec![Type::Integer]),
+        );
+
         // scanf: string -> void
         self.function_table
             .insert("input".to_string(), (vec![Type::String], vec![Type::Void]));
@@ -198,9 +227,17 @@ impl TypeChecker {
                 vec![Type::Void],
             ),
         );
+
+        self.symbol_table.insert("char_t".to_string(), Type::Char);
+        self.symbol_table.insert("int_t".to_string(), Type::Integer);
+        self.symbol_table.insert("float_t".to_string(), Type::Float);
+        self.symbol_table.insert("bool_t".to_string(), Type::Bool);
+        self.symbol_table
+            .insert("string_t".to_string(), Type::String);
+        self.symbol_table.insert("void_t".to_string(), Type::Void);
     }
 
-    pub fn check(&mut self, node: &AstNode) -> Result<Type, String> {
+    pub fn check(&mut self, node: &mut AstNode) -> Result<Type, String> {
         match node {
             AstNode::Number { value: _ } => Ok(Type::Integer),
             AstNode::String { value: _ } => Ok(Type::String),
@@ -216,6 +253,12 @@ impl TypeChecker {
                     "+" | "-" | "*" | "/" | "%" => {
                         if left_type == Type::Integer && right_type == Type::Integer {
                             Ok(Type::Integer)
+                        } else if let Type::Pointer(tp) = left_type.clone()
+                            && right_type == Type::Integer
+                        {
+                            Ok(left_type)
+                        } else if left_type == Type::String && right_type == Type::Integer {
+                            Ok(Type::String)
                         } else {
                             Err(format!(
                                 "cannot apply {:?} to {:?} and {:?}",
@@ -267,6 +310,8 @@ impl TypeChecker {
                 };
                 let value_type = self.check(value)?;
 
+                // If type is NotMentioned, check the type of the variable
+
                 if let Some(existing_type) = self.symbol_table.get(variable) {
                     if *existing_type != value_type && *existing_type != Type::NotMentioned {
                         return Err(format!(
@@ -275,7 +320,11 @@ impl TypeChecker {
                         ));
                     }
                 }
-
+                // Debug print all relevant variables
+                // println!(
+                //     "Variable: {:?}, Expected: {:?}, Value: {:?}",
+                //     variable, expected, value_type
+                // );
                 if expected != Type::NotMentioned && expected != value_type {
                     self.symbol_table
                         .insert(variable.clone(), value_type.clone());
@@ -325,13 +374,13 @@ impl TypeChecker {
                 let mut return_found = false;
 
                 // Add function arguments to symbol table
-                for (tp, argname) in arguments {
+                for (tp, argname) in arguments.iter() {
                     self.symbol_table
                         .insert(format!("{}::{}", name, argname), Type::from(tp.clone()));
                 }
 
                 fn check_return_statements(
-                    node: &AstNode,
+                    node: &mut AstNode,
                     expected_return_type: &Type,
                     func_name: &str,
                     type_checker: &mut TypeChecker,
@@ -339,7 +388,7 @@ impl TypeChecker {
                     return_found: &mut bool,
                 ) {
                     match node {
-                        AstNode::Return { ref value } => match type_checker.check(value) {
+                        AstNode::Return { ref mut value } => match type_checker.check(value) {
                             Ok(ret_type) => {
                                 if ret_type != *expected_return_type {
                                     errors.push(format!(
@@ -445,7 +494,13 @@ impl TypeChecker {
                                 Some(t) => Type::from(t.clone()),
                                 None => Type::NotMentioned,
                             };
-                            let value_type = type_checker.check(value).unwrap_or(Type::Void);
+                            let value_type_res = type_checker.check(value);
+
+                            // if error, panic
+                            let value_type = match value_type_res {
+                                Ok(tp) => tp,
+                                Err(e) => panic!("Error: {}", e),
+                            };
 
                             if let Some(existing_type) = type_checker.symbol_table.get(variable) {
                                 if *existing_type != value_type {
@@ -455,7 +510,6 @@ impl TypeChecker {
                                     ));
                                 }
                             }
-
                             if expected != Type::NotMentioned && expected != value_type {
                                 type_checker
                                     .symbol_table
@@ -559,18 +613,18 @@ impl TypeChecker {
                 {
                     if arg_types.len() != arguments.len() {
                         return Err(format!(
-                            "Expected {} arguments but found {}",
+                            "Function {} Expected {} arguments but found {}",
+                            name,
                             arg_types.len(),
                             arguments.len()
                         ));
                     }
-
-                    for (arg, expected) in arguments.iter().zip(arg_types.iter()) {
+                    for (arg, expected) in arguments.iter_mut().zip(arg_types.iter()) {
                         let actual = self.check(arg)?;
                         if actual != *expected {
                             return Err(format!(
-                                "Expected argument of type {:?} but found {:?}",
-                                expected, actual
+                                "{} Expected argument of type {:?} but found {:?}",
+                                name, expected, actual
                             ));
                         }
                     }
@@ -580,6 +634,7 @@ impl TypeChecker {
                     Err(format!("Undefined function: {}", name))
                 }
             }
+            AstNode::Char { value: _ } => Ok(Type::Char),
             AstNode::Bool { value: _ } => Ok(Type::Bool),
             AstNode::Null => Ok(Type::Void),
             AstNode::Eof => {
@@ -587,10 +642,21 @@ impl TypeChecker {
                 Ok(Type::Void)
             }
             AstNode::Pointer { value } => Ok(Type::Pointer(Box::new(self.check(value)?))),
-            AstNode::Dereference { value } => match self.check(value)? {
-                Type::Pointer(tp) => Ok(*tp),
-                _ => Err("Cannot dereference non-pointer type".to_string()),
-            },
+            AstNode::Dereference { value } => {
+                match self.check(value)? {
+                    Type::Pointer(tp) => {
+                        // If type is a String pointer, return a char
+                        if *tp == Type::DataTp("Str".to_owned()) {
+                            Ok(Type::Char)
+                        } else {
+                            Ok(*tp)
+                        }
+                    }
+                    Type::String => Ok(Type::Char),
+                    _ => Err("Cannot dereference non-pointer type".to_string()),
+                }
+            }
+            AstNode::Comment { value: _ } => Ok(Type::Void),
             _ => Err(format!("Unsupported node: {:?}", node)),
         }
     }
